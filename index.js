@@ -9,6 +9,15 @@ app.use(express.urlencoded()) // Para parsear el contenido que recibimos como UR
 app.use(express.json()) //Para parsear el contenido que recibimos como JSON
 app.use(cookieParser()); //Decodifica las cookies y luego se emplea el express.json para leer el contenido
 
+isAdmin = (req, res, next) => {
+  if(req.cookies && req.cookies.user){
+    return next() 
+  } else{
+    res.redirect("login")
+  }
+};
+
+
 isAuth = (req, res, next) => {
   if(req.cookies && req.cookies.user){
     return next() 
