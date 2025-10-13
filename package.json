@@ -7,12 +7,14 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run lint:fix && npm run format",
     "start": "node index.js",
     "dev": "nodemon index.js",
     "prepare": "husky",
-    "lint": "eslint --fix . && prettier --write ."
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --write ."
   },
+  
   "dependencies": {
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.4.1",
@@ -22,6 +24,7 @@
     "nodemon": "^3.1.10",
     "pg": "^8.16.3"
   },
+
   "devDependencies": {
     "@eslint/js": "^9.37.0",
     "eslint": "^9.37.0",
@@ -32,6 +35,7 @@
     "lint-staged": "^16.2.3",
     "prettier": "^3.6.2"
   },
+
   "repository": {
     "type": "git",
     "url": "git+https://github.com/benjyMatamoros/mikiClass.git"

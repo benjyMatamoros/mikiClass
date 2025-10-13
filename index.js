@@ -2,73 +2,76 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
+const path = require('path');
+require('dotenv').config();
 
 const app = express();
 const port = 3000;
 
-require('dotenv').config();
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 
 const client = new Client({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'testdb',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'postgres',
 });
 
 function isAdmin(req, res, next) {
-  if (req.cookies && req.cookies.user && req.cookies.role === 'admin')
-    return next();
-  return res.redirect('login');
+  if (req.cookies.user && req.cookies.role === 'admin') return next();
+  return res.redirect('/');
 }
-function isUser(req, res, next) {
-  if (req.cookies && req.cookies.user && req.cookies.role === 'user')
-    return next();
-  return res.redirect('login');
-}
-/*function isAuth(req, res, next) {
-  if (req.cookies && req.cookies.user) return next();
-  return res.redirect('login');
-}*/
 
-app.get('/home', isUser, (req, res) => res.render('home', req.query));
+function isUser(req, res, next) {
+  if (req.cookies.user && req.cookies.role === 'user') return next();
+  return res.redirect('/');
+}
+
 app.get('/', (req, res) => res.render('login'));
+app.get('/home', isUser, (req, res) =>
+  res.render('home', { user: req.cookies.user }),
+);
+app.get('/admin', isAdmin, (req, res) =>
+  res.render('admin', { user: req.cookies.user }),
+);
+
 app.get('/logout', (req, res) => {
   res.clearCookie('user');
   res.clearCookie('role');
   console.log('logged out');
   res.redirect('/');
 });
-app.get('/admin', isAdmin, (req, res) => res.render('admin'));
 
 app.post('/login', async (req, res) => {
-  await client.connect();
   const { user, password } = req.body;
   try {
     const result = await client.query(
       'SELECT username, password, role FROM users WHERE username = $1',
       [user],
     );
+
     const dbuser = result.rows[0];
     if (!dbuser) {
-      console.log('user not found');
+      console.log('Usuario no encontrado');
       return res.redirect('/');
     }
 
     const ok = await bcrypt.compare(password, dbuser.password);
     if (!ok) {
-      console.log('incorrect password');
+      console.log('ContraseÃ±a incorrecta');
       return res.redirect('/');
     }
 
-    res.cookie('user', dbuser.username);
-    res.cookie('role', dbuser.role === 'admin' ? 'admin' : 'user');
-    console.log(`${dbuser.role} logged`);
-    return res.redirect(dbuser.role === 'admin' ? 'admin' : 'home');
+    res.cookie('user', dbuser.username, { httpOnly: true });
+    res.cookie('role', dbuser.role, { httpOnly: true });
+
+    console.log(`${dbuser.role} logged in`);
+    return res.redirect(dbuser.role === 'admin' ? '/admin' : '/home');
   } catch (err) {
     console.error('Login error:', err);
     return res.redirect('/');
@@ -78,6 +81,7 @@ app.post('/login', async (req, res) => {
 async function start() {
   try {
     await client.connect();
+    console.log('Conectado a la base de datos');
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -106,10 +110,11 @@ async function start() {
     );
 
     app.listen(port, () => {
-      console.log(`Example app listening on port ${port}`);
+      console.log('Servidor escuchando');
+      console.log('Usuarios de prueba: admin/adminpass y user/userpass');
     });
   } catch (err) {
-    console.error('Error initializing database', err);
+    console.error('Error inicializando base de datos:', err);
     process.exit(1);
   }
 }
