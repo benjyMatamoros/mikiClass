@@ -1,50 +1,121 @@
-const express = require('express')
-const app = express()
-const port = 3000
-const cookieParser = require('cookie-parser')
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const { Client } = require('pg');
+const bcrypt = require('bcrypt');
+const path = require('path');
 
-app.set('view engine', 'ejs'); // Sets EJS as the view engine
+const app = express();
+const port = 3000;
 
-app.use(express.urlencoded()) // Para parsear el contenido que recibimos como URLencoded
-app.use(express.json()) //Para parsear el contenido que recibimos como JSON
-app.use(cookieParser()); //Decodifica las cookies y luego se emplea el express.json para leer el contenido
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cookieParser());
 
-isAuth = (req, res, next) => {
-  if(req.cookies && req.cookies.user){
-    return next() 
-  } else{
-    res.redirect("login")
+const client = new Client({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'monolito',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'postgres',
+});
+
+function isAdmin(req, res, next) {
+  if (req.cookies.user && req.cookies.role === 'admin') return next();
+  return res.redirect('/');
+}
+
+function isUser(req, res, next) {
+  if (req.cookies.user && req.cookies.role === 'user') return next();
+  return res.redirect('/');
+}
+
+app.get('/', (req, res) => res.render('login'));
+app.get('/home', isUser, (req, res) =>
+  res.render('home', { user: req.cookies.user }),
+);
+app.get('/admin', isAdmin, (req, res) =>
+  res.render('admin', { user: req.cookies.user }),
+);
+
+app.get('/logout', (req, res) => {
+  res.clearCookie('user');
+  res.clearCookie('role');
+  console.log('logged out');
+  res.redirect('/');
+});
+
+app.post('/login', async (req, res) => {
+  const { user, password } = req.body;
+  try {
+    const result = await client.query(
+      'SELECT username, password, role FROM users WHERE username = $1',
+      [user],
+    );
+
+    const dbuser = result.rows[0];
+    if (!dbuser) {
+      console.log('Usuario no encontrado');
+      return res.redirect('/');
+    }
+
+    const ok = await bcrypt.compare(password, dbuser.password);
+    if (!ok) {
+      console.log('ContraseÃ±a incorrecta');
+      return res.redirect('/');
+    }
+
+    res.cookie('user', dbuser.username, { httpOnly: true });
+    res.cookie('role', dbuser.role, { httpOnly: true });
+
+    console.log(`${dbuser.role} logged in`);
+    return res.redirect(dbuser.role === 'admin' ? '/admin' : '/home');
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.redirect('/');
   }
-};
-
-app.get('/home', isAuth, (req, res) => { //Creamos el endpoint "pagina" de home que tenemos creada como ejs
-  res.render('home', req.query)
 });
 
+async function start() {
+  try {
+    await client.connect();
+    console.log('Conectado a la base de datos');
 
-app.get('/login', (req, res) => { //Creamos el endpoint "pagina" del login que tenemos creada como ejs
-  res.render('login')
-});
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL
+      );
+    `);
 
-app.get('/logout', (req, res) => { //Creamos el endpoint "pagina" del login que tenemos creada como ejs
-  res.clearCookie("user") //Limpiamos la cookie user
-  res.redirect('login') 
-  console.log('logged out')
-});
+    const adminHash = await bcrypt.hash('adminpass', 10);
+    const userHash = await bcrypt.hash('userpass', 10);
 
-app.post('/login', (req, res) => { //Aqui recibimos los datos del login.ejs
-  const {user, password} = req.body
+    await client.query(
+      `INSERT INTO users (username, password, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (username) DO NOTHING`,
+      ['admin', adminHash, 'admin'],
+    );
 
-  if(user === 'admin' && password === '1234'){
-    res.cookie('user', user) //options - js no secure si (Creamos cookie al logearse)
-    res.redirect('home') //si los valores coinciden redirijimos a la pagina home
-    console.log('admin logged')
-  } else{
-    res.redirect('login') //si los valores no coinciden redirijimos a la pagina login
-    console.log('incorrect password')
+    await client.query(
+      `INSERT INTO users (username, password, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (username) DO NOTHING`,
+      ['user', userHash, 'user'],
+    );
+
+    app.listen(port, () => {
+      console.log('Servidor escuchando');
+      console.log('Usuarios de prueba: admin/adminpass y user/userpass');
+    });
+  } catch (err) {
+    console.error('Error inicializando base de datos:', err);
+    process.exit(1);
   }
-});
+}
 
-app.listen(port, () => { //Especificamos el puerto que empleara la aplicacion
-  console.log(`Example app listening on port ${port}`)
-});
+start();
