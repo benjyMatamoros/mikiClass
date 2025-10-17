@@ -3,7 +3,6 @@ const cookieParser = require('cookie-parser');
 const { Client } = require('pg');
 const bcrypt = require('bcrypt');
 const path = require('path');
-require('dotenv').config();
 
 const app = express();
 const port = 3000;
@@ -17,7 +16,7 @@ app.use(cookieParser());
 const client = new Client({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'testdb',
+  database: process.env.DB_NAME || 'monolito',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
 });
